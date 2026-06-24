@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>เกมกลองชุดเวทมนตร์ AR Magic Drum Party</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🪄</text></svg>">
+    <link href="https://fonts.googleapis.com/css2?family=Itim&display=swap" rel="stylesheet">
+    
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        body { margin: 0; padding: 0; background-color: #0d0d11; font-family: 'Itim', cursive; overflow: hidden; user-select: none; }
+        #game-container { position: relative; width: 100vw; height: 100vh; background: #0d0d11; }
+
+        /* 📸 ระบบกล้องและ Canvas (AR) */
+        #video-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); opacity: 0.45; }
+        #gameCanvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 5; transform: scaleX(-1); }
+
+        /* 🥁 กลองชุดดีไซน์ไฟนีออนวิบวับ */
+        #drum-kit {
+            position: absolute; bottom: 50px; left: 5%; width: 90%;
+            display: flex; justify-content: space-around; z-index: 10;
+        }
+        .drum-wrapper { text-align: center; display: flex; flex-direction: column; align-items: center; }
+        
+        .drum-pad {
+            width: 240px; height: 130px; border-radius: 120px / 65px; 
+            position: relative; border: 6px solid #FFF;
+            transition: transform 0.05s, box-shadow 0.05s;
+        }
+        .drum-pad.active { transform: translateY(15px) scale(0.95); }
+        
+        #drum-left { 
+            background: radial-gradient(circle, #ff2a6d, #910030); 
+            box-shadow: 0 10px 0px #610020, 0 0 30px rgba(255, 42, 109, 0.6);
+        } 
+        #drum-left.active { box-shadow: 0 2px 0px #610020, 0 0 60px #ff2a6d; }
+
+        #drum-right { 
+            background: radial-gradient(circle, #05d9e8, #00565e); 
+            box-shadow: 0 10px 0px #00363b, 0 0 30px rgba(5, 217, 232, 0.6);
+        }
+        #drum-right.active { box-shadow: 0 2px 0px #00363b, 0 0 60px #05d9e8; }
+
+        .drum-label { 
+            color: white; font-size: 1.8rem; font-weight: bold; margin-top: 15px;
+            background: rgba(255,255,255,0.1); padding: 6px 25px; border-radius: 30px;
+            backdrop-filter: blur(5px); border: 2px solid rgba(255,255,255,0.2);
+            text-shadow: 0 0 10px rgba(255,255,255,0.5);
+        }
+
+        /* 👑 แผงคะแนนด้านบน */
+        #header {
+            position: absolute; top: 20px; left: 10%; width: 80%;
+            text-align: center; padding: 15px; background: rgba(18, 18, 24, 0.85);
+            border-radius: 25px; z-index: 10; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            border: 3px solid #05d9e8; backdrop-filter: blur(10px);
+        }
+        #lyrics-display { font-size: 2.5rem; color: #fff; margin-bottom: 5px; text-shadow: 0 0 15px #05d9e8; }
+        #score-text { font-size: 1.8rem; color: #00ff66; font-weight: bold; text-shadow: 0 0 10px rgba(0,255,102,0.4); }
+
+        /* 🎮 หน้าจอเริ่มต้น */
+        #start-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: radial-gradient(circle, #1a1a26, #050508); z-index: 100;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+        }
+        .btn-start {
+            background: linear-gradient(45deg, #ff2a6d, #05d9e8); color: white; border: none; padding: 22px 80px;
+            font-size: 2.6rem; font-family: 'Itim'; border-radius: 50px; cursor: pointer; font-weight: bold;
+            box-shadow: 0 0 30px rgba(5, 217, 232, 0.5); transition: 0.3s;
+        }
+        .btn-start:hover { transform: scale(1.05); box-shadow: 0 0 50px rgba(255, 42, 109, 0.8); }
+
+        /* 🏆 หน้าจอสรุปผลคะแนนแบบพรีเมียม */
+        #summary-screen {
+            position: absolute; top: 0; left: 0; width: 100vw; height: 100vh;
+            background-color: rgba(13, 13, 17, 0.95); z-index: 150;
+            display: none; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+        }
+        #summary-box {
+            background: #1c1c24; padding: 35px; border-radius: 40px;
+            box-shadow: 0 20px 50px rgba(5, 217, 232, 0.3); border: 8px solid #05d9e8;
+            max-width: 550px; display: flex; flex-direction: column; align-items: center;
+        }
+        #player-snapshot {
+            width: 320px; height: 240px; border-radius: 25px;
+            border: 6px solid #ff2a6d; box-shadow: 0 0 30px rgba(255, 42, 109, 0.5);
+            object-fit: cover; background-color: #222; margin: 15px 0;
+            transform: scaleX(-1); 
+        }
+        .btn-restart {
+            background: #ffb703; color: #121214; border: none; padding: 15px 45px;
+            font-size: 2rem; font-family: 'Itim', cursive; border-radius: 25px;
+            cursor: pointer; font-weight: bold; box-shadow: 0 5px 15px rgba(255, 183, 3, 0.4);
+            margin-top: 15px; transition: transform 0.2s;
+        }
+        .btn-restart:active { transform: scale(0.95); }
+    </style>
+</head>
+<body>
+
+<div id="start-overlay">
+    <h1 style="font-size: 4.8rem; color: #05d9e8; margin: 10px 0; text-shadow: 0 0 20px #05d9e8;">🪄 คทาเวทมนตร์ ตีกลองปาร์ตี้ 🥁</h1>
+    <p style="font-size: 1.9rem; margin-bottom: 40px; color: #b0b0b5; max-width: 650px;">
+        สนุกไปกับเสียงเพลงจังหวะมันส์ๆ ของคุณครู! ถือคทาเวทมนตร์สุดเท่ในจอ <br>แล้วเสกคาถาตีลูกบอลสายฟ้า <span style="color:#ff2a6d; font-weight:bold;">"ตี!"</span> ให้ตรงจังหวะหน้ากลองเลย!
+    </p>
+    <button class="btn-start" onclick="initGame()">เริ่มปาร์ตี้เสียงเพลง 🚀</button>
+</div>
+
+<div id="game-container">
+    <div id="header">
+        <div id="lyrics-display">ขยับร่างกายตามจังหวะเลยหนูๆ... ⚡</div>
+        <div id="score-text">✨ คะแนนความแม่นยำ: <span id="score" style="font-size: 2.5rem; color:#fff; text-shadow:0 0 10px #00ff66;">0</span> ✨</div>
+    </div>
+
+    <div id="drum-kit">
+        <div class="drum-wrapper">
+            <div id="drum-left" class="drum-pad"></div>
+            <div class="drum-label">💖 คทาสีชมพู [ กลองซ้าย ]</div>
+        </div>
+        <div class="drum-wrapper">
+            <div id="drum-right" class="drum-pad"></div>
+            <div class="drum-label">💙 คทาสีฟ้า [ กลองขวา ]</div>
+        </div>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+    <div id="video-container">
+        <video id="webcam" autoplay playsinline></video>
+    </div>
+</div>
+
+<!-- 🏆 หน้าสรุปผลคะแนนแชมป์เปี้ยนห้องเรียนดนตรี -->
+<div id="summary-screen">
+    <div id="summary-box">
+        <h1 style="font-size: 3.5rem; color: #05d9e8; margin: 5px 0; text-shadow: 0 0 15px #05d9e8;">🏆 สุดยอดมือกลองเวทมนตร์! 🏆</h1>
+        
+        <canvas id="player-snapshot"></canvas>
+        
+        <p style="font-size: 1.8rem; color: #e0e0e5; margin: 5px 0;">หนูตีกลองได้ตรงจังหวะและจับจังหวะเพลงได้ยอดเยี่ยมมาก!</p>
+        <div style="font-size: 3.5rem; color: #00ff66; font-weight: bold; margin: 10px 0; text-shadow: 0 0 15px rgba(0,255,102,0.4);">
+            ได้คะแนน <span id="final-score" style="font-size: 4.5rem;">0</span> คะแนน
+        </div>
+        <button class="btn-restart" onclick="restartGame()">เริ่มปาร์ตี้ใหม่ 🔄</button>
+    </div>
+</div>
+
+<script>
+    const video = document.getElementById('webcam');
+    const gameCanvas = document.getElementById('gameCanvas');
+    const ctx = gameCanvas.getContext('2d');
+    const lyricsEl = document.getElementById('lyrics-display');
+
+    let score = 0;
+    let isGameOver = false;
+    let startTime = 0;
+    let audioCtx = null;
+    let activeNotes = [];
+    let particles = [];
+    let spawnTimer;
+
+    // 🎵 [ปรับปรุงระบบโหลดเพลงอัจฉริยะ] 
+    // ตัวเลือกที่ 1: ดึงจากโฟลเดอร์บน GitHub เดียวกัน (เสถียรที่สุด แนะนำให้โหลดไฟล์มาวางชื่อ music.mp3)
+    // ตัวเลือกสำรอง: หากไม่มีไฟล์ music.mp3 ตัวระบบจะสลับไปดึง Direct Link จากเซิร์ฟเวอร์สำรองที่ปลอดภัยโดยอัตโนมัติ
+    let partyMusic = new Audio();
+    partyMusic.volume = 0.65;
+
+    // ระบบตรวจเช็กสถานะการโหลดและแก้ไขลิงก์เสีย
+    function setupMusicSource() {
+        // ทดลองดึงจากโฟลเดอร์เดียวกันก่อน
+        partyMusic.src = 'music.mp3';
+        
+        // หากค้นหาไฟล์ music.mp3 ในเครื่องไม่เจอหรือเซิร์ฟเวอร์ระบุว่าไม่มีไฟล์ 
+        // ระบบจะสลับไปดึงจากอินเทอร์เน็ตสาธารณะที่มีเสถียรภาพและไม่ติดกั้นความปลอดภัยทันที
+        partyMusic.addEventListener('error', function fallback() {
+            console.log("สลับมาใช้ลิงก์เพลงสำรองเนื่องจากไม่พบไฟล์ภายใน");
+            partyMusic.src = 'https://docs.google.com/uc?export=download&id=1waasY6vS9ObraDXaLB97gxgch3OUbaEt'; 
+            partyMusic.removeEventListener('error', fallback); // ป้องกัน Loop เด้งซ้ำ
+        });
+    }
+
+    setupMusicSource();
+
+    function initAudio() {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+
+    // เสียงกลองสังเคราะห์เด้งสู้มือตอนเคาะโดน
+    function playDrumHit(type) {
+        if(!audioCtx) return;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        
+        if(type === 0) { 
+            osc.frequency.setValueAtTime(180, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.5, audioCtx.currentTime);
+        } else { 
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(280, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+        }
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.12);
+        osc.start(); osc.stop(audioCtx.currentTime + 0.12);
+    }
+
+    // 🔊 [เอฟเฟกต์เสียงรัวกลองชุดใหญ่ + ปรบมือรัวๆ เฉลิมฉลองแชมป์]
+    function playApplauseSFX() {
+        try {
+            initAudio();
+            for (let i = 0; i < 15; i++) {
+                setTimeout(() => {
+                    if (!isGameOver) return;
+                    let osc = audioCtx.createOscillator();
+                    let gain = audioCtx.createGain();
+                    osc.type = 'triangle';
+                    osc.frequency.setValueAtTime(90 + Math.random()*30, audioCtx.currentTime);
+                    gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                    gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
+                    osc.connect(gain); gain.connect(audioCtx.destination);
+                    osc.start(); osc.stop(audioCtx.currentTime + 0.08);
+                }, i * 60);
+            }
+
+            for (let i = 0; i < 40; i++) {
+                setTimeout(() => {
+                    if (!isGameOver) return; 
+                    let osc = audioCtx.createOscillator();
+                    let gain = audioCtx.createGain();
+                    osc.type = 'bandpass'; 
+                    osc.frequency.setValueAtTime(1200 + (Math.random() - 0.5) * 400, audioCtx.currentTime);
+                    gain.gain.setValueAtTime(0.18 + Math.random()*0.1, audioCtx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.06);
+                    osc.connect(gain); gain.connect(audioCtx.destination);
+                    osc.start(); osc.stop(audioCtx.currentTime + 0.06);
+                }, 400 + (i * 70) + (Math.random() * 30)); 
+            }
+        } catch(e) {}
+    }
+
+    const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
+    hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.55 });
+    hands.onResults(onResults);
+
+    const camera = new Camera(video, {
+        onFrame: async () => { if(!isGameOver) await hands.send({image: video}); },
+        width: 640, height: 480
+    });
+
+    function initGame() {
+        initAudio();
+        document.getElementById('start-overlay').style.display = 'none';
+        document.getElementById('summary-screen').style.display = 'none';
+        lyricsEl.innerText = "กำลังเริ่มดนตรีปาร์ตี้... 🎶";
+        
+        // เล่นเสียงเพลงประกอบในเกม
+        partyMusic.currentTime = 0;
+        partyMusic.play().then(() => {
+            lyricsEl.innerText = "ดนตรีมาแล้ว แดนซ์เลย! ⚡";
+        }).catch(e => {
+            console.log("Audio play error:", e);
+            lyricsEl.innerText = "⚠️ คลิกหนึ่งครั้งเพื่อกระตุ้นและเปิดใช้งานเสียงเพลง!";
+            
+            // หากบราวเซอร์ตั้งความปลอดภัยให้ปิดเสียงตอนเริ่มออโต้ ให้มีปุ่มหรือการคลิกหน้าต่างเพื่อช่วยกระตุ้นเสียง
+            window.addEventListener('click', function resumeAudio() {
+                partyMusic.play().catch(err => console.log(err));
+                lyricsEl.innerText = "ดนตรีเริ่มทำงานสำเร็จแล้ว! ⚡";
+                window.removeEventListener('click', resumeAudio);
+            }, { once: true });
+        });
+        
+        score = 0;
+        document.getElementById('score').innerText = score;
+        activeNotes = [];
+        particles = [];
+        isGameOver = false;
+        startTime = performance.now();
+        
+        resize();
+        camera.start();
+        
+        clearInterval(spawnTimer);
+        spawnTimer = setInterval(autoSpawnNote, 850);
+        animate();
+    }
+
+    function resize() {
+        gameCanvas.width = window.innerWidth;
+        gameCanvas.height = window.innerHeight;
+    }
+
+    function autoSpawnNote() {
+        if (isGameOver) return;
+        const randomLane = Math.random() > 0.5 ? 1 : 0;
+        const cheers = ["แดนซ์เลย! 🕺", "ลุยๆ! 🔥", "จังหวะดี! ⭐", "สุดยอด! 🚀", "เคาะบีท! 🎶", "เย้! 🎉"];
+        activeNotes.push({
+            time: performance.now() - startTime + 1500, 
+            lane: randomLane,
+            lyric: cheers[Math.floor(Math.random() * cheers.length)],
+            currentY: -50,
+            hit: false
+        });
+    }
+
+    function onResults(results) {
+        ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
+        
+        updateAndDrawNotes();
+        drawParticles();
+
+        if (results.multiHandLandmarks) {
+            results.multiHandLandmarks.forEach((landmarks, index) => {
+                const wrist = landmarks[0];
+                const palmCenter = landmarks[9];
+
+                const hx = palmCenter.x * gameCanvas.width;
+                const hy = palmCenter.y * gameCanvas.height;
+                const wx = wrist.x * gameCanvas.width;
+                const wy = wrist.y * gameCanvas.height;
+
+                const angle = Math.atan2(hy - wy, hx - wx) - Math.PI/2;
+                const isLeftHand = results.multiHandedness[index].label === 'Right'; 
+                const themeColor = isLeftHand ? "#ff2a6d" : "#05d9e8"; 
+
+                // วาดคทาเวทมนตร์นีออนเรืองแสง
+                ctx.save();
+                ctx.translate(hx, hy);
+                ctx.rotate(angle);
+                
+                // ด้ามคทา
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = themeColor;
+                ctx.lineWidth = 10;
+                ctx.strokeStyle = "#FFFFFF";
+                ctx.lineCap = "round";
+                ctx.beginPath();
+                ctx.moveTo(0, 40);
+                ctx.lineTo(0, -120);
+                ctx.stroke();
+
+                // หัวคทาวงกลม
+                ctx.beginPath();
+                ctx.arc(0, -120, 20, 0, Math.PI * 2);
+                ctx.fillStyle = themeColor;
+                ctx.fill();
+                ctx.lineWidth = 4;
+                ctx.strokeStyle = "#FFF";
+                ctx.stroke();
+                ctx.restore();
+
+                const stickTipX = hx + Math.sin(angle) * -120;
+                const stickTipY = hy - Math.cos(angle) * -120;
+
+                if(Math.random() > 0.4) {
+                    particles.push({ x: stickTipX, y: stickTipY, vx: (Math.random()-0.5)*3, vy: (Math.random()-0.5)*3, size: Math.random()*6+2, color: themeColor, alpha: 1 });
+                }
+
+                checkHit(stickTipX, stickTipY);
+            });
+        }
+    }
+
+    function updateAndDrawNotes() {
+        const currentTime = performance.now() - startTime;
+        const targetY = gameCanvas.height - 110; 
+
+        activeNotes.forEach((note, i) => {
+            note.currentY = ((currentTime - (note.time - 1500)) / 1500) * targetY;
+            const laneX = getLaneX(note.lane);
+
+            if (!note.hit) {
+                // วาดวงกลมโน้ตสายฟ้าออร่า "ตี!"
+                ctx.save();
+                ctx.shadowBlur = 25;
+                ctx.shadowColor = note.lane === 0 ? "#ff2a6d" : "#05d9e8";
+                ctx.beginPath();
+                ctx.arc(laneX, note.currentY, 45, 0, Math.PI * 2);
+                ctx.fillStyle = "#FFFFFF";
+                ctx.fill();
+                
+                ctx.font = "bold 32px 'Itim'";
+                ctx.fillStyle = note.lane === 0 ? "#ff2a6d" : "#05d9e8";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText("ตี!", laneX, note.currentY);
+                ctx.restore();
+            }
+
+            if(Math.abs(note.currentY - targetY) < 60) {
+                lyricsEl.innerText = note.lyric;
+            }
+
+            if(note.currentY > gameCanvas.height) activeNotes.splice(i, 1);
+        });
+
+        // จบเกมอัตโนมัติเมื่อเพลงจบหรือหมดเวลา
+        if(currentTime > 90000) {
+            endGame();
+        }
+    }
+
+    function getLaneX(lane) {
+        const pads = document.getElementById('drum-kit').getElementsByClassName('drum-pad');
+        if (pads.length <= lane) return 0;
+        const rect = pads[lane].getBoundingClientRect();
+        const screenX = rect.left + rect.width / 2;
+        return gameCanvas.width - screenX;
+    }
+
+    function checkHit(hx, hy) {
+        const targetY = gameCanvas.height - 110;
+        
+        activeNotes.forEach(note => {
+            if(!note.hit) {
+                const laneX = getLaneX(note.lane);
+                const dist = Math.hypot(hx - laneX, hy - note.currentY);
+                
+                if(dist < 90 && Math.abs(note.currentY - targetY) < 80) {
+                    note.hit = true;
+                    score += 10;
+                    document.getElementById('score').innerText = score;
+                    
+                    playDrumHit(note.lane);
+
+                    const pColor = note.lane === 0 ? "#ff2a6d" : "#05d9e8";
+                    for(let k=0; k<15; k++){
+                        particles.push({ x: laneX, y: targetY, vx: (Math.random()-0.5)*12, vy: (Math.random()-0.5)*12 - 5, size: Math.random()*8+4, color: pColor, alpha: 1 });
+                    }
+
+                    const padId = note.lane === 0 ? 'drum-left' : 'drum-right';
+                    const pad = document.getElementById(padId);
+                    pad.classList.add('active');
+                    setTimeout(() => pad.classList.remove('active'), 60);
+                }
+            }
+        });
+    }
+
+    function drawParticles() {
+        particles.forEach((p, index) => {
+            p.x += p.vx; p.y += p.vy; p.alpha -= 0.03;
+            if(p.alpha <= 0) { particles.splice(index, 1); return; }
+            ctx.save();
+            ctx.globalAlpha = p.alpha;
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = p.color;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.fillStyle = "#FFF";
+            ctx.fill();
+            ctx.restore();
+        });
+    }
+
+    function endGame() {
+        isGameOver = true;
+        partyMusic.pause();
+        clearInterval(spawnTimer);
+
+        const snapshotCanvas = document.getElementById('player-snapshot');
+        const snapCtx = snapshotCanvas.getContext('2d');
+        snapshotCanvas.width = 320;
+        snapshotCanvas.height = 240;
+        snapCtx.drawImage(video, 0, 0, snapshotCanvas.width, snapshotCanvas.height);
+
+        document.getElementById('final-score').innerText = score;
+        document.getElementById('summary-screen').style.display = 'flex';
+        
+        ctx.clearRect(0, 0, gameCanvas.width, gameCanvas.height);
+        
+        playApplauseSFX();
+    }
+
+    function restartGame() {
+        initGame();
+    }
+
+    function animate() {
+        if(!isGameOver) requestAnimationFrame(animate);
+    }
+
+    window.addEventListener('resize', resize);
+</script>
+
+</body>
+</html>

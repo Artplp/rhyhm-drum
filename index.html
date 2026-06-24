@@ -192,25 +192,25 @@
     // ระบบโหลดเพลงประกอบในปาร์ตี้
     let partyMusic = new Audio();
     partyMusic.volume = 0.65;
+    let isUsingSynthBGM = false;
+    let synthInterval = null;
+    let synthBeatCount = 0;
 
     // ฟังก์ชันตรวจสอบสถานะไฟล์เสียงและพยายามเชื่อมโยงไฟล์ออนไลน์
     function checkAudioFile() {
-        // ดึงไฟล์ 'music.mp3' ที่อยู่ในโฟลเดอร์เดียวกัน
         partyMusic.src = 'music.mp3';
         
-        // เมื่อไฟล์โหลดสำเร็จและพร้อมเล่น
         partyMusic.addEventListener('canplaythrough', () => {
             audioStatusText.innerHTML = "🎉 โหลดไฟล์เพลง 'music.mp3' สำเร็จ! ระบบพร้อมเล่น 🟢";
             audioStatusText.style.color = "#00ff66";
+            isUsingSynthBGM = false;
         }, { once: true });
 
-        // หากหาไฟล์ในเซิร์ฟเวอร์ไม่เจอชั่วคราว (เช่น GitHub อัปเดตไม่เสร็จ)
         partyMusic.addEventListener('error', () => {
-            audioStatusText.innerHTML = "❌ ยังไม่พบไฟล์ 'music.mp3' ออฟไลน์ (หรือรอระบบ GitHub อัปเดต 1 นาที)";
-            audioStatusText.style.color = "#ff5252";
-            
-            // สลับดึงสำรองทางอินเทอร์เน็ตที่เสถียรกว่า (เผื่อกูเกิลไดรฟ์แชร์ลิงก์ได้สำเร็จ)
-            partyMusic.src = 'https://docs.google.com/uc?export=download&id=1waasY6vS9ObraDXaLB97gxgch3OUbaEt';
+            // หากระบบหาไฟล์ mp3 ไม่เจอ จะทำการเปิดโหมดเสียงสังเคราะห์คีย์เปียโนปาร์ตี้ (Synth BGM) เพื่อค้ำประกันว่ามีเสียงชัวร์ๆ
+            audioStatusText.innerHTML = "⚠️ สลับเปิด 'ระบบเสียงดนตรีบอร์ดสังเคราะห์' (มีเพลงขึ้นแน่นอน) 🟢";
+            audioStatusText.style.color = "#05d9e8";
+            isUsingSynthBGM = true;
         }, { once: true });
     }
 
@@ -220,6 +220,7 @@
         if (file) {
             const fileURL = URL.createObjectURL(file);
             partyMusic.src = fileURL;
+            isUsingSynthBGM = false;
             audioStatusText.innerHTML = "📁 โหลดเพลงจากเครื่องคอมพิวเตอร์เสร็จสิ้น! พร้อมเล่นทันที 🟢";
             audioStatusText.style.color = "#00ff66";
         }
@@ -231,6 +232,33 @@
         if (!audioCtx) {
             audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         }
+    }
+
+    // 🎹 ระบบเล่นดนตรีสังเคราะห์อัตโนมัติ (Chiptune Synthesized BGM)
+    // สำหรับเล่นเสียงคีย์โน้ตสนุกสนานเป็นทำนองอัตโนมัติ ป้องกันไม่ให้ห้องเรียนเงียบ
+    function playSynthBGMBeat() {
+        if (!isUsingSynthBGM || isGameOver) return;
+        initAudio();
+        if (!audioCtx) return;
+
+        const synthOsc = audioCtx.createOscillator();
+        const synthGain = audioCtx.createGain();
+        synthOsc.connect(synthGain);
+        synthGain.connect(audioCtx.destination);
+
+        // กำหนดโน้ตทำนองเพลงจังหวะแดนซ์แสนสนุก
+        const notesMelody = [261.63, 293.66, 329.63, 349.23, 392.00, 440.00, 493.88, 523.25];
+        const randomNote = notesMelody[synthBeatCount % notesMelody.length];
+        
+        synthOsc.type = 'sine';
+        synthOsc.frequency.setValueAtTime(randomNote, audioCtx.currentTime);
+        
+        synthGain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+        synthGain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.35);
+
+        synthOsc.start();
+        synthOsc.stop(audioCtx.currentTime + 0.4);
+        synthBeatCount++;
     }
 
     // เสียงกลองสังเคราะห์เด้งสู้มือตอนเคาะโดน
@@ -301,22 +329,6 @@
         initAudio();
         document.getElementById('start-overlay').style.display = 'none';
         document.getElementById('summary-screen').style.display = 'none';
-        lyricsEl.innerText = "กำลังเริ่มดนตรีปาร์ตี้... 🎶";
-        
-        // สั่งให้เพลงประกอบเล่นทันทีที่สัมผัสเพื่อทะลวงระบบ Autoplay Protection ของเบราว์เซอร์
-        partyMusic.currentTime = 0;
-        partyMusic.play().then(() => {
-            lyricsEl.innerText = "ดนตรีมาแล้ว แดนซ์เลย! ⚡";
-        }).catch(e => {
-            console.log("Autoplay blocked:", e);
-            lyricsEl.innerText = "⚠️ กรุณาคลิกบนหน้าจออีก 1 ครั้งเพื่อเปิดระบบเสียงเพลงประกอบ!";
-            
-            window.addEventListener('click', function resumeAudio() {
-                partyMusic.play().catch(err => console.log(err));
-                lyricsEl.innerText = "ดนตรีเริ่มทำงานสำเร็จแล้ว! ⚡";
-                window.removeEventListener('click', resumeAudio);
-            }, { once: true });
-        });
         
         score = 0;
         document.getElementById('score').innerText = score;
@@ -327,6 +339,28 @@
         
         resize();
         camera.start();
+
+        // เล่นระบบเสียงเพลงตามกลไกที่เลือกไว้
+        if (isUsingSynthBGM) {
+            lyricsEl.innerText = "บอร์ดดนตรีสังเคราะห์ทำงานแล้ว แดนซ์เลย! ⚡";
+            clearInterval(synthInterval);
+            synthInterval = setInterval(playSynthBGMBeat, 400); // ดีดคีย์เปียโนทำนองทุกๆ 0.4 วินาที
+        } else {
+            lyricsEl.innerText = "กำลังเริ่มดนตรีปาร์ตี้... 🎶";
+            partyMusic.currentTime = 0;
+            partyMusic.play().then(() => {
+                lyricsEl.innerText = "ดนตรีมาแล้ว แดนซ์เลย! ⚡";
+            }).catch(e => {
+                console.log("Autoplay blocked:", e);
+                lyricsEl.innerText = "⚠️ กรุณาคลิกบนหน้าจอเพื่อเริ่มเล่นดนตรีประกอบ!";
+                
+                window.addEventListener('click', function resumeAudio() {
+                    partyMusic.play().catch(err => console.log(err));
+                    lyricsEl.innerText = "ดนตรีเริ่มทำงานสำเร็จแล้ว! ⚡";
+                    window.removeEventListener('click', resumeAudio);
+                }, { once: true });
+            });
+        }
         
         clearInterval(spawnTimer);
         spawnTimer = setInterval(autoSpawnNote, 850);
@@ -441,7 +475,7 @@
             if(note.currentY > gameCanvas.height) activeNotes.splice(i, 1);
         });
 
-        // ดนตรีแดนซ์จะอัปเดตสรุปผลเมื่อครบ 90 วินาที
+        // จบปาร์ตี้ดนตรีเมื่อครบ 90 วินาที
         if(currentTime > 90000) {
             endGame();
         }
@@ -504,6 +538,7 @@
         isGameOver = true;
         partyMusic.pause();
         clearInterval(spawnTimer);
+        clearInterval(synthInterval);
 
         const snapshotCanvas = document.getElementById('player-snapshot');
         const snapCtx = snapshotCanvas.getContext('2d');
